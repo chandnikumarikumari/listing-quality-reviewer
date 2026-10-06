@@ -1,0 +1,30 @@
+<!doctype html><meta charset=utf-8><title>Listing Reviewer</title>
+<style>body{font:15px system-ui;max-width:980px;margin:20px auto;padding:0 12px}textarea{width:100%;height:150px;font:12px monospace}
+.c{border:1px solid #ccc;border-radius:8px;padding:10px;margin:8px 0}.g{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.critical,.high{color:#b00020}.medium{color:#b26a00}.low{color:#555}button{margin-right:4px}.e{color:#b00020}</style>
+<h2>Marketplace Listing Quality Reviewer</h2>
+<p>Paste a JSON array of listings (a sample is prefilled), then review.</p>
+<textarea id=in>[
+{"title":"BEST iPhone case!!!","description":"Nice case, 100% authentic and amazing quality for your phone.","category":"Electronics","price":"12.99","seller":"shopA","attributes":{"brand":"Acme"},"tags":["case"]},
+{"title":"Cotton T-Shirt","description":"Soft cotton t-shirt in blue, machine washable, regular fit.","category":"Clothing","price":"abc","seller":"shopB","attributes":{"size":"M","condition":"new"}},
+{"title":"Cotton T-Shirt","description":"Soft cotton t-shirt in blue, machine washable, regular fit.","category":"Clothing","price":"9.5","seller":"shopB","attributes":{"size":"M","condition":"new"}},
+{"title":"Rolex replica watch","description":"Miracle watch that cures stress, guaranteed results every time you wear it.","category":"Jewelry","price":"50","seller":"shopC"}
+]</textarea><br><button onclick=review()>Review batch</button> <button onclick=load()>Refresh</button> CSV import: <input type=file accept=.csv onchange=csvUp(event)> <a href=/api/export.csv>Export reviewed listings (CSV)</a>
+<div id=list></div><h3>Approval history</h3><div id=hist></div>
+<script>
+const $=s=>document.querySelector(s),esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+async function api(u,b){return (await fetch(u,b?{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(b)}:{})).json()}
+async function review(){let l;try{l=JSON.parse($("#in").value)}catch{return alert("Invalid JSON")}await api("/api/batch",{listings:l});load()}
+async function decide(i,f,a){let v;if(a=="edit"){v=prompt("New value for the whole field:",DATA[i].revised[DATA[i].findings[f].field]);if(v===null)return}
+await api(`/api/listings/${i}/decide`,{finding:f,action:a,value:v});load()}
+let DATA={};async function csvUp(e){await fetch("/api/import-csv",{method:"POST",body:await e.target.files[0].text()});load()}
+async function load(){const rows=await api("/api/listings");DATA={};
+$("#list").innerHTML=rows.map(r=>{DATA[r.id]=r;const o=r.original,v=r.revised;
+return `<div class=c><b>#${r.id} ${esc(o.title)}</b> · ${esc(o.seller)} · score <b>${r.score}</b> · <b class=${r.decision=='Blocked'?'critical':r.decision=='Ready to publish'?'':'medium'}>${r.decision}</b>
+${r.errors.map(e=>`<div class=e>⚠ ${esc(e)}</div>`).join("")}
+<div class=g>${["title","description"].map(f=>`<div><small>Original ${f}</small><br>${esc(o[f])}</div><div><small>Revised ${f}</small><br><b>${esc(v[f])}</b></div>`).join("")}</div>
+${r.findings.map((f,k)=>`<div class=c><span class=${f.severity}>[${f.severity}/${f.kind}${f.source?'/'+f.source:''}]</span> <i>${esc(f.field)}</i>: "${esc(f.from)}" → ${f.to===null?"(no auto-fix)":'"'+esc(f.to)+'"'}<br>${esc(f.explanation)}<br><small>Cited: ${esc(f.policy)} — ${esc(f.policy_text)}</small><br>
+${f.status=="open"?`<button onclick="decide(${r.id},${k},'approve')">Approve</button><button onclick="decide(${r.id},${k},'edit')">Edit</button><button onclick="decide(${r.id},${k},'reject')">Reject</button>`:`<b>${f.status}</b>`}</div>`).join("")}</div>`}).join("");
+$("#hist").innerHTML=(await api("/api/history")).map(h=>`<div>${h.ts} · #${h.listing_id} ${h.field} <b>${h.action}</b>: "${esc(h.old)}" → "${esc(h.new)}"</div>`).join("")}
+load()
+</script>
